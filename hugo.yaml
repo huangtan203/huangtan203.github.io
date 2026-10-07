@@ -1,0 +1,35 @@
+# ============================================================
+# 站点配置 —— 发布前把 <你的GitHub用户名> 替换成真实 ID（共 2 处）
+# ============================================================
+baseURL: "https://huangtan203.github.io/"
+locale: "zh-cn"
+defaultContentLanguage: "zh-cn"
+title: "嵌入式 · RISC-V 学习笔记"
+theme: "PaperMod"
+pagination:
+  pagerSize: 10
+
+params:
+  env: production
+  description: "嵌入式 MCU 开发 · RISC-V 处理器设计 · 虚拟化 · Linux多核 · 一生一芯项目记录"
+  author: "huangtan203"
+  keywords: [嵌入式, MCU, RISC-V, 虚拟化, Linux多核, 一生一芯, 处理器设计]
+  defaultTheme: auto
+  mainSections: ["posts"]
+  ShowReadingTime: true
+  ShowPostNavLinks: true
+  ShowBreadCrumbs: true
+  ShowCodeCopyButtons: true
+  ShowToc: true
+
+menu:
+  main:
+    - name: 归档
+      url: /archives/
+      weight: 5
+    - name: 标签
+      url: /tags/
+      weight: 10
+    - name: GitHub
+      url: https://github.com/huangtan203/huangtan203.github.io
+      weight: 15
