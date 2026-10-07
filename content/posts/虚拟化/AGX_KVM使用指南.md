@@ -1,3 +1,11 @@
+---
+title: "AGX Orin 上使用 KVM 详细指导文档"
+date: 2026-10-07
+draft: false
+tags: ["虚拟化", "KVM", "AGX Orin"]
+categories: ["虚拟化"]
+summary: "NVIDIA Jetson AGX Orin 上使用 KVM 虚拟化的完整指南，涵盖环境准备、虚拟机创建、网络配置、GPU 直通等。"
+---
 # AGX Orin 上使用 KVM 详细指导文档
 
 ## 目录
