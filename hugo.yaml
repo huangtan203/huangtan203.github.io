@@ -22,6 +22,28 @@ params:
   ShowCodeCopyButtons: true
   ShowToc: true
 
+  # 个人主页模式
+  profileMode:
+    enabled: true
+    title: "huangtan203"
+    subtitle: "嵌入式 MCU 工程师 · RISC-V 爱好者 · 一生一芯参与者"
+    imageUrl: "avatar.jpg"
+    imageTitle: "huangtan203"
+    imageWidth: 150
+    imageHeight: 150
+    buttons:
+      - name: 归档
+        url: /archives/
+      - name: 标签
+        url: /tags/
+
+  # 社交图标
+  socialIcons:
+    - name: github
+      url: "https://github.com/huangtan203"
+    - name: email
+      url: "mailto:huangtan@sjtu.edu.cn"
+
 menu:
   main:
     - name: 归档
