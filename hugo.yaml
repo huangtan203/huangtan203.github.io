@@ -22,6 +22,10 @@ params:
   ShowCodeCopyButtons: true
   ShowToc: true
 
+  # 不蒜子访问量统计
+  busuanzi:
+    enable: true
+
   # 个人主页模式
   profileMode:
     enabled: true

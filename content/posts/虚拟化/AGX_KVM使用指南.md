@@ -21,6 +21,8 @@ summary: "NVIDIA Jetson AGX Orin 上使用 KVM 虚拟化的完整指南，涵盖
 9. [GPU 直通 (vGPU / SR-IOV)](#9-gpu-直通-vgpu--sr-iov)
 10. [性能调优](#10-性能调优)
 11. [常见问题与排查](#11-常见问题与排查)
+附录 A. [重新编译内核启用 KVM](#附录-a重新编译内核启用-kvm)
+附录 B. [实战踩坑速查](#附录-b实战踩坑速查)
 12. [参考资料](#12-参考资料)
 
 ---
@@ -153,7 +155,7 @@ CONFIG_HAVE_KVM_EVENTFD=y
 ```
 
 如果 `CONFIG_KVM` 是 `m`（模块），需要手动加载模块。
-如果是 `# CONFIG_KVM is not set`，则需要重新编译内核。
+如果是 `# CONFIG_KVM is not set`，则需要重新编译内核，详细步骤见[附录 A](#附录-a重新编译内核启用-kvm)。
 
 ### 3.3 检查 KVM 设备节点
 
@@ -875,6 +877,277 @@ lsmod | grep vfio
 # 检查设备是否绑定到 vfio-pci
 lspci -k -s 0000:00:00.0
 ```
+
+---
+
+## 附录 A：重新编译内核启用 KVM
+
+> **适用场景**：JetPack 6.x / L4T R39.x 官方内核默认未开启 KVM（`# CONFIG_KVM is not set`），需要自行编译内核并替换。
+
+### A.1 确认内核未开启 KVM
+
+在板子上执行：
+
+```bash
+zcat /proc/config.gz | grep -i kvm
+```
+
+若输出包含 `# CONFIG_KVM is not set`，说明需要重新编译内核。硬件层面可通过以下方式确认支持虚拟化：
+
+```bash
+cat /proc/cpuinfo | grep -i "Features"
+```
+
+> 本例环境：L4T R39.2.1，内核 `6.8.12-tegra`，CPU 为 Cortex-A78AE（`CPU part: 0xd42`，ARMv8.2，硬件支持 EL2）。此时 Features 中无 `virt`，也印证内核未启用 KVM。
+
+### A.2 获取内核源码
+
+**方式一：NVIDIA 官网下载（推荐）**
+
+在 [Jetson Linux Archive](https://developer.nvidia.com/embedded/jetson-linux-archive) 下载与板子 L4T 版本对应的两个文件：
+- **Driver Package (BSP)**：`Jetson_Linux_R39.2.1_aarch64.tbz2`（含 `flash.sh` 刷写工具）
+- **Driver Package (BSP) Sources**：`public_sources.tbz2`（含内核源码）
+
+**方式二：apt 安装（源里可能没有该包）**
+
+```bash
+sudo apt update
+sudo apt install nvidia-l4t-kernel-source
+```
+
+**方式三：Git 仓库**
+
+```bash
+git clone https://nv-tegra.nvidia.com/linux-6.8.git
+```
+
+### A.3 解压源码
+
+```bash
+mkdir -p ~/jeston && cd ~/jeston
+
+# 解压 BSP
+tar xf ~/Downloads/Jetson_Linux_R39.2.1_aarch64.tbz2
+
+# 解压源码包
+cd Linux_for_Tegra
+tar xf ~/Downloads/public_sources.tbz2
+
+# 解压内核源码
+cd source
+tar xf kernel_src.tbz2
+```
+
+解压后内核源码位于：`~/jeston/Linux_for_Tegra/source/kernel/kernel-noble/`
+
+> **注意 L4T R39 目录结构与旧版不同**：内核源码目录是 `source/kernel/kernel-noble/`，而非旧版的 `source/public/kernel/kernel-6.8/`（R39 内核基于 Ubuntu 24.04 "Noble"，目录名因此为 `kernel-noble`）。
+
+### A.4 安装交叉编译工具链（x86 宿主机）
+
+在 Ubuntu x86 宿主机/虚拟机上：
+
+```bash
+sudo apt update
+sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev \
+    gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+    device-tree-compiler u-boot-tools
+```
+
+> 若直接在板子上本地编译（板子能联网），则无需交叉编译器，安装 `build-essential bc bison flex libssl-dev libelf-dev` 即可。
+
+### A.5 导出当前内核配置
+
+在板子上导出当前运行内核的配置：
+
+```bash
+zcat /proc/config.gz > /tmp/config-6.8.12-tegra
+```
+
+拷贝到宿主机：
+
+```bash
+scp nvidia@<板子IP>:/tmp/config-6.8.12-tegra ~/jeston/
+```
+
+> 首次连接会提示确认主机指纹，输入 `yes`；或加 `-o StrictHostKeyChecking=no` 跳过。
+
+### A.6 配置内核开启 KVM
+
+```bash
+cd ~/jeston/Linux_for_Tegra/source/kernel/kernel-noble
+
+# 以板子配置为基础
+cp ~/jeston/config-6.8.12-tegra .config
+
+# 开启 KVM 相关选项（注意 --enable 中间无空格）
+./scripts/config --enable CONFIG_KVM
+./scripts/config --enable CONFIG_KVM_ARM_HOST
+./scripts/config --enable CONFIG_KVM_ARM_VGIC
+./scripts/config --enable CONFIG_KVM_ARM_TIMER
+./scripts/config --enable CONFIG_KVM_GENERIC_HARDWARE_ENABLING
+./scripts/config --enable CONFIG_KVM_XFER_TO_GUEST_WORK
+./scripts/config --enable CONFIG_VHOST_NET
+./scripts/config --enable CONFIG_VHOST_MENU
+./scripts/config --enable CONFIG_TUN
+./scripts/config --enable CONFIG_BRIDGE
+
+# 处理依赖关系
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+
+# 验证
+grep -E "^CONFIG_KVM=|CONFIG_KVM_ARM_HOST|CONFIG_VHOST_NET" .config
+```
+
+应看到 `CONFIG_KVM=y`、`CONFIG_KVM_ARM_HOST=y` 等。
+
+### A.7 交叉编译内核
+
+```bash
+cd ~/jeston/Linux_for_Tegra/source/kernel/kernel-noble
+
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image dtbs modules
+```
+
+产物：
+- 内核镜像：`arch/arm64/boot/Image`
+- 设备树：`arch/arm64/boot/dts/nvidia/*.dtb`
+- 内核模块：编译产物，随后通过 `modules_install` 安装
+
+### A.8 替换 / 烧录内核
+
+**方式一：SSH 直接替换（推荐，无需 Recovery 模式）**
+
+（1）在宿主机打包：
+
+```bash
+cd ~/jeston/Linux_for_Tegra/source/kernel/kernel-noble
+
+mkdir -p /tmp/kernel-update
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+    INSTALL_MOD_PATH=/tmp/kernel-update modules_install
+cp arch/arm64/boot/Image /tmp/kernel-update/
+
+cd /tmp && tar czf kernel-update.tar.gz kernel-update/
+```
+
+（2）拷贝到板子并替换：
+
+```bash
+scp /tmp/kernel-update.tar.gz nvidia@<板子IP>:/tmp/
+ssh nvidia@<板子IP>
+```
+
+登录板子后：
+
+```bash
+cd /tmp
+tar xf kernel-update.tar.gz
+
+# 备份原内核（回退全靠它）
+sudo cp /boot/Image /boot/Image.bak
+
+# 替换内核
+sudo cp /tmp/kernel-update/Image /boot/Image
+
+# 安装新模块（版本号为 6.8.12，与官方 6.8.12-tegra 区分）
+sudo cp -r /tmp/kernel-update/lib/modules/6.8.12 /lib/modules/
+sudo rm -f /lib/modules/6.8.12/build /lib/modules/6.8.12/source   # 删掉无效软链接
+sudo depmod -a 6.8.12
+
+# 确认引导指向 /boot/Image
+grep LINUX /boot/extlinux/extlinux.conf
+
+# 重启
+sudo reboot
+```
+
+> - 解压时 `tar: ... time stamp ... in the future` 是**警告不是错误**，源于板子 RTC 时间不准，忽略即可。
+> - `/tmp` 下的文件重启会被清空，务必在重启前完成所有替换操作。
+
+**方式二：flash.sh 刷写（整机刷写或只刷内核分区）**
+
+板子进入 Recovery 模式后：
+
+```bash
+cd ~/jeston/Linux_for_Tegra
+# 只刷内核分区（快）
+sudo ./flash.sh -k kernel jetson-agx-orin-devkit mmcblk0p1
+```
+
+### A.9 验证 KVM 生效
+
+重启后：
+
+```bash
+uname -r               # 应显示 6.8.12（不再是 -tegra）
+ls -l /dev/kvm         # 出现该节点即成功
+cat /proc/cpuinfo | grep -i "Features" | tr ' ' '\n' | grep virt   # 出现 virt
+zcat /proc/config.gz | grep "CONFIG_KVM="    # 应显示 CONFIG_KVM=y
+```
+
+### A.10 回退方法
+
+若新内核无法启动，SSH 上去恢复原内核：
+
+```bash
+sudo cp /boot/Image.bak /boot/Image
+sudo reboot
+```
+
+若 SSH 也无法连接，需串口线进 U-Boot，或进 Recovery 模式用 `flash.sh -k kernel` 刷回官方内核。
+
+> **注意**：自编译内核版本号为 `6.8.12`，与官方 `6.8.12-tegra` 不同，NVIDIA 的 GPU/桌面等 OOT 模块（为 `-tegra` 版本编译）在新内核下可能无法加载。**SSH 与 KVM 不受影响**，用于测试 KVM 足够。
+
+---
+
+## 附录 B：实战踩坑速查
+
+下面是在 AGX Orin（JetPack 6.x / L4T R39.2.1）上实际编译并启用 KVM 过程中踩到的坑，供快速查阅。
+
+### B.1 下载与解压
+
+| 坑 | 现象 | 解决 |
+|---|---|---|
+| `tar xf xxx.tbz2 ./` 报错 `Not found in archive` | tar 解压时末尾多写了 `./`，把它当成「仅提取名为 `./` 的文件」 | 去掉末尾的 `./`，直接 `tar xf xxx.tbz2` |
+| 找不到 `source/public/` 目录 | L4T R39 的源码结构已变，内核源码在 `source/kernel/kernel-noble/` | 解压 `source/kernel_src.tbz2`，路径用 `source/kernel/kernel-noble/` |
+| 内核目录名不是 `kernel-6.8` | JetPack 6 基于 Ubuntu 24.04 "Noble"，目录名叫 `kernel-noble` | 用 `kernel/kernel-noble/` |
+
+### B.2 SSH 连接
+
+| 坑 | 现象 | 解决 |
+|---|---|---|
+| `Host key verification failed` | 首次 SSH 连接板子时没输 `yes` 就回车 | 输入 `yes` 确认主机指纹，或加 `-o StrictHostKeyChecking=no` 跳过 |
+| `Permission denied, please try again` | 密码输错了一次，会再提示一次 | 确认板子上 `nvidia` 用户的密码，注意大小写 |
+
+### B.3 内核配置
+
+| 坑 | 现象 | 解决 |
+|---|---|---|
+| `bad command: --` | `./scripts/config -- enable` 中间多了空格 | `--enable` 要连在一起写，不能有空格 |
+| `make olddefconfig` 报缺少依赖 | 只开了 `CONFIG_KVM` 但相关子项没自动选 | 执行 `make olddefconfig` 会自动补齐依赖，不用手动逐个开 |
+
+### B.4 传输与解压
+
+| 坑 | 现象 | 解决 |
+|---|---|---|
+| `scp` 显示 100% 但板子上 `ls /tmp` 看不到文件 | 第一次密码错误时终端就停住了，你在停住的这段时间里切到板子上查，传输其实还没开始 | 等 `scp` 命令行完全退出后再去板子上验证；或者用 `scp ... && ssh ... "ls -lh /tmp/"` 传完立刻验证 |
+| `tar: ... time stamp ... is in the future` 大量警告 | 板子 RTC 没电池、没联网对时，时钟停在很早的时间，文件时间戳比系统时间「新」 | **这是警告不是错误**，文件已经正常解压，忽略即可 |
+| `/tmp` 里的文件重启后没了 | Linux 的 `/tmp` 是 tmpfs，重启清空 | 替换内核的步骤在重启前全部做完，不要重启后再接着做 |
+
+### B.5 烧录与启动
+
+| 坑 | 现象 | 解决 |
+|---|---|---|
+| 替换内核后 GPU / 桌面没反应 | 自编译内核版本号是 `6.8.12`，NVIDIA 的 GPU 驱动是为 `6.8.12-tegra` 编译的，版本不匹配加载不了 | 正常现象，SSH 和 KVM 不受影响；要完整 GPU 功能需回退到官方内核或把 OOT 模块也一起编 |
+| `depmod -a` 找不到模块 | 没指定版本号，或模块目录名不对 | 用 `sudo depmod -a 6.8.12` 显式指定版本 |
+| 内核起不来、SSH 连不上 | 内核配置有问题或镜像不对 | 用备份的 `/boot/Image.bak` 恢复；连不上就进 Recovery 模式用 `flash.sh -k kernel` 刷回 |
+
+### B.6 验证
+
+| 坑 | 现象 | 解决 |
+|---|---|---|
+| `cat /proc/cpuinfo \| grep -E "features\|flags"` 没输出 | ARM64 上关键字段叫 `Features`（首字母大写），x86 才叫 `flags` | 用 `cat /proc/cpuinfo \| grep -i "Features"` 忽略大小写 |
+| Features 里找不到 `virt` | 内核没开启 KVM 时，`/proc/cpuinfo` 不会展示虚拟化特性 | 开启 KVM 并重跑新内核后再看，就会出现 `virt` |
 
 ---
 

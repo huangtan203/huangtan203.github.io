@@ -1,0 +1,44 @@
+{{- /* 不蒜子访问量统计：仅文章详情页显示每页 PV + 站点总 PV */ -}}
+{{- if and .Site.Params.busuanzi.enable (not .Site.IsServer) .IsPage -}}
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<style>
+  .busuanzi-container {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.9rem;
+    color: var(--secondary);
+  }
+  .busuanzi-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .busuanzi-item svg {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    stroke: currentColor;
+    fill: none;
+  }
+</style>
+<div class="busuanzi-container">
+  <span class="busuanzi-item">
+    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+    <span>本文阅读量：<span id="busuanzi_value_page_pv">加载中...</span></span>
+  </span>
+  <span class="busuanzi-item">
+    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="2" y1="12" x2="22" y2="12"/>
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+    </svg>
+    <span>站点总访问：<span id="busuanzi_value_site_pv">加载中...</span></span>
+  </span>
+</div>
+{{- end -}}
